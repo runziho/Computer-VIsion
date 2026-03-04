@@ -39,4 +39,5 @@ while True: #계속 반복
     elif key == ord('q'): # q 입력시 종료
         break
 
+
 cv.destroyAllWindows() #Open cv가 만든 창을 완전히 닫음
