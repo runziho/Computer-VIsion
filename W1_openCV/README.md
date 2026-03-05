@@ -3,6 +3,11 @@
 - OpenCV를 사용하여 이미지를 불러오고 화면에 출력
 - 원본 이미지와 그레이스케일로 변환된 이미지를 나란히 표시
 
+### 그레이스케일 개념
+<img width="1758" height="933" alt="image" src="https://github.com/user-attachments/assets/390bd4b8-9b5a-4a9b-aa86-8868320478f3" />
+컬러 이미지는 각 픽셀이 R, G, B 세 가지 색상 값으로 구성되어 있으며, 그레이스케일 변환은 이 값을 하나의 밝기 값으로 변환하는 과정이다.  
+OpenCV는 Y = 0.299R + 0.587G + 0.114B 공식을 사용하여 RGB 값을 하나의 밝기(Gray) 값으로 계산한다.
+
 ### 전체 코드
 ```python
 import cv2 as cv
