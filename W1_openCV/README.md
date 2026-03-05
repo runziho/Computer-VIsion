@@ -35,7 +35,7 @@ cv.waitKey(0) #입력이 들어올 때까지 기다림
 cv.destroyAllWindows() #Open cv가 만든 창을 완전히 닫음
 ```
 
-실행 결과 
+### 실행 결과 
 
 <img width="1625" height="959" alt="image" src="https://github.com/user-attachments/assets/a1da3409-2cd5-4cd1-8006-57471a79c6a2" />
 
@@ -172,7 +172,7 @@ cv.setMouseCallback('Drawing', draw) #draw 함수에 대한 마우스 이벤트 
 ```
 
 
-출력 결과
+### 출력 결과
 <img width="671" height="348" alt="스크린샷 2026-03-05 041053" src="https://github.com/user-attachments/assets/2cc1df9e-6bd1-41d9-a311-e767551814be" />
 
 <img width="914" height="345" alt="image" src="https://github.com/user-attachments/assets/1ca2dce6-cfc1-459b-b294-3373f33d0869" />
