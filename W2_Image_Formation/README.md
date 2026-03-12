@@ -6,8 +6,7 @@
 - cv2.undistoer()를 사용하여 왜곡 보정한 결과를 시각화
 
 <details>
-<summary>코드 보기</summary>
-### 전체 코드
+<summary>전체 코드</summary>
 ```python
 import cv2
 import numpy as np
@@ -107,8 +106,7 @@ cv2.imshow("Original (Left) | Undistorted (Right)", result) #원본 이미지와
 cv2.imwrite("undistorted_result.jpg", result) #비교 결과 이미지 파일로 저장
 cv2.waitKey(0) # 키 입력 기다림
 cv2.destroyAllWindows() #모든 출력 창 종료
-```
-</details>
+</details>```
 
 ## 1) 모든 이미지에서 체크보드 코너를 검출
 
