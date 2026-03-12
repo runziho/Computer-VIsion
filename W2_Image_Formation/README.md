@@ -213,8 +213,8 @@ M[1, 2] += -40             # y축 방향으로 -40픽셀 이동
 
 # 3. Stereo Disparity 기반 Depth 추정
 
-- 이미지를 불러오고 사용자가 마우스로 클릭하고 드래그하여 관심 영역(roi)를 선택
-- 선택한 영역만 따로 저장하거나 표시
+- 같은 장면을 왼쪽 카메라와 오른쪽 카메라에서 촬영한 두 장의 이미지를 이용해 깊이를 추정
+- 두 이미지에서 같은 물체가 얼마나 옆으로 이동해 보이는지 계산하여 물체가 카메라에서 얼마나 떨어져있는지(depth)를 구할 수 있음
 
 ### 전체 코드
 
@@ -357,10 +357,7 @@ cv.setMouseCallback('Drawing', draw) #draw 함수에 대한 마우스 이벤트 
 
 
 ### 출력 결과
-<img width="671" height="348" alt="스크린샷 2026-03-05 041053" src="https://github.com/user-attachments/assets/2cc1df9e-6bd1-41d9-a311-e767551814be" />
-
-<img width="914" height="345" alt="image" src="https://github.com/user-attachments/assets/1ca2dce6-cfc1-459b-b294-3373f33d0869" />
-
+<img width="2032" height="604" alt="image" src="https://github.com/user-attachments/assets/81834d9f-5d1d-4e6c-a6d2-9a2412312be6" />
 
 
 
