@@ -102,7 +102,7 @@ print("결과 이미지 저장 완료: sift_result.png")                        
 
 ### 실행 결과
 
-<img width="2091" height="982" alt="image" src="https://github.com/user-attachments/assets/bc902db3-6653-4883-9932-41c860bd9b6c" />
+![실행 결과](sift_result.png)
 
 
 # 2. SIFT를 이용한 두 영상 간 특징점 매칭
@@ -196,7 +196,7 @@ print("결과 이미지 저장 완료: sift_matching_result.png")
 ```
 
 ## 실행 결과
-
+![매칭 결과](sift_matching_result.png)
 
 # 3. 호모그래피를 이용한 이미지 정합 (Image Alignment)
 - SIFT 특징점을 사용하여 두 이미지 간 대응점을 찾고, 이를 바탕으로 호모그래피를 계산하여 하나의 이미지 위에 정렬
@@ -204,95 +204,139 @@ print("결과 이미지 저장 완료: sift_matching_result.png")
 
 ## 전체 코드
 ```python
-import cv2 as cv             
-import numpy as np
-import matplotlib.pyplot as plt 
+import cv2 as cv                                                                      
+import matplotlib.pyplot as plt                                                    
+import numpy as np                                                                   
 
-img = cv.imread('coffee cup.JPG')  # 이미지 파일 불러오기
-img_copy = img.copy()  # 원본용 복사
+img1 = cv.imread('img1.jpg')   # img 1 로드
+img2 = cv.imread('img2.jpg')   # img2 로드
+if img1 is None or img2 is None:                                                       # 이미지 로드 실패 시
+    raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                         # 오류
+img1_rgb = cv.cvtColor(img1, cv.COLOR_BGR2RGB)                                         # img 1 BGR → RGB 변환
+img2_rgb = cv.cvtColor(img2, cv.COLOR_BGR2RGB)                                         # img 2 BGR → RGB 변환
 
-rect = cv.selectROI("Select Object", img, False)  # (x, y, width, height) 형태로 자동 생성됨
-cv.destroyAllWindows()  # ROI 선택 창 닫기
+sift = cv.SIFT_create()                                                                # SIFT 객체 생성
 
-mask = np.zeros(img.shape[:2], np.uint8)  # 이미지 크기와 동일한 마스크 생성 (초기값 0)
-bgdModel = np.zeros((1, 65), np.float64)  # 배경 모델 초기화
-fgdModel = np.zeros((1, 65), np.float64)  # 전경 모델 초기화
+kp1, des1 = sift.detectAndCompute(img1_rgb, mask=None)                                 # img1의 특징점 및 디스크립터 계산
+kp2, des2 = sift.detectAndCompute(img2_rgb, mask=None)                                 # img2의 특징점 및 디스크립터 계산
+print(f"img1 특징점 수: {len(kp1)},  img2 특징점 수: {len(kp2)}")                     # 각 이미지 특징점 개수 출력
 
-cv.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv.GC_INIT_WITH_RECT)  # 사용자가 지정한 영역(rect)을 기준으로 GrabCut 수행 (배경/객체 분리)
+bf = cv.BFMatcher()                                                                    # BFMatcher 객체 생성 (기본: L2 거리)
+knn_matches = bf.knnMatch(des1, des2, k=2)                                             # 각 특징점에 대해 최근접 이웃 2개 매칭
 
-mask2 = np.where((mask == cv.GC_BGD) | (mask == cv.GC_PR_BGD), 0, 1).astype('uint8')  # 배경(0), 객체(1)로 마스크 재구성
+good_matches = []                                                                      # 좋은 매칭 결과를 저장할 리스트
+for m, n in knn_matches:                                                               # 매칭 쌍 순회
+    if m.distance < 0.7 * n.distance:                                                  # Lowe's ratio test: 거리 비율이 0.7 미만이면
+        good_matches.append(m)                                                         # 좋은 매칭으로 채택
+print(f"좋은 매칭 수: {len(good_matches)}")                                            # 좋은 매칭 개수 출력
 
-result = img * mask2[:, :, np.newaxis]  # 마스크를 이용해 객체 부분만 남기고 배경 제거
+pts1 = np.float32([kp1[m.queryIdx].pt for m in good_matches])                         # img1의 매칭 특징점 좌표 추출
+pts2 = np.float32([kp2[m.trainIdx].pt for m in good_matches])                         # img2의 매칭 특징점 좌표 추출
 
-plt.figure(figsize=(15,5))  # 전체 출력 화면 크기 설정
+H, mask = cv.findHomography(pts2, pts1, cv.RANSAC, 5.0)                               # RANSAC으로 호모그래피 행렬 계산 (이상점 제거)
+print(f"호모그래피 행렬:\n{H}")                                                        # 계산된 호모그래피 행렬 출력
 
-plt.subplot(1,3,1)  # 1번째 이미지
-plt.imshow(cv.cvtColor(img_copy, cv.COLOR_BGR2RGB))  # 원본 이미지 출력 (BGR → RGB 변환)
-plt.title('Original Image')  # 제목 설정
-plt.axis('off')  # 축 제거
+h1, w1 = img1_rgb.shape[:2]                                                            # img1 높이·너비 추출
+h2, w2 = img2_rgb.shape[:2]                                                            # img2 높이·너비 추출
+panorama_w = w1 + w2                                                                   # 파노라마 너비: 두 이미지 너비 합산
+panorama_h = max(h1, h2)                                                               # 파노라마 높이: 두 이미지 중 큰 높이 사용
 
-plt.subplot(1,3,2)  # 2번째 이미지
-plt.imshow(mask2, cmap='gray')  # 마스크 이미지 출력 (흑백)
-plt.title('Mask')  # 제목 설정
-plt.axis('off')  # 축 제거
+warped = cv.warpPerspective(img2_rgb, H, (panorama_w, panorama_h))                    # img2를 호모그래피로 변환하여 img1 시점에 정렬
+warped[0:h1, 0:w1] = img1_rgb                                                          # 변환된 이미지 위에 img1을 덮어씌워 합성
 
-plt.subplot(1,3,3)  # 3번 이미지
-plt.imshow(cv.cvtColor(result, cv.COLOR_BGR2RGB))  # 배경 제거된 결과 이미지 출력
-plt.title('Result (Object Only)')  # 제목 설정
-plt.axis('off')  # 축 제거
+match_draw = cv.drawMatches(                                                           # 매칭 결과 이미지 생성
+    img1_rgb, kp1,                                                                     # img2와 특징점
+    img2_rgb, kp2,                                                                     # img2와 특징점
+    good_matches[:50],                                                                 # 상위 50개 좋은 매칭만 표시
+    outImg=None,                                                                       # 출력 이미지 (None이면 새로 생성)
+    flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS                                   # 매칭되지 않은 특징점은 표시 안 함
+)
 
-plt.show()  # 모든 결과 화면에 출력
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))                                        # 1행 2열 서브플롯 생성
+fig.suptitle('SIFT Homography', fontsize=16, fontweight='bold')                        # 전체 제목 설정
+
+axes[0].imshow(match_draw)                                                             # 1번 칸에 매칭 결과 출력
+axes[0].set_title(f'Matching Result ({len(good_matches)} matches)', fontsize=13)       # 1번째 칸 제목 설정
+axes[0].axis('off')                                                                    # 1번째 칸 축 숨기기
+
+axes[1].imshow(warped)                                                                 # 2번 칸에 변환·합성된 이미지 출력
+axes[1].set_title('Warped Image (Panorama)', fontsize=13)                              # 2번째 칸 제목 설정
+axes[1].axis('off')                                                                    # 2번째 칸 축 숨기기
+
+plt.tight_layout()                                                                     # 서브플롯 간격 자동 조정
+plt.savefig('sift_homography_result.png', dpi=150, bbox_inches='tight')                # 결과 이미지 파일로 저장
+plt.show()                                                                             # 화면에 이미지 출력
+print("결과 이미지 저장 완료: sift_homography_result.png")                             # 저장 완료 메시지 출력
 ```
+
 ## 1) cv.imread()를 사용하여 두 개의 이미지를 불러옴
 ```python
-mask = np.zeros(img.shape[:2], np.uint8)  # 이미지 크기와 동일한 마스크 생성 (초기값 0)
-bgdModel = np.zeros((1, 65), np.float64)  # 배경 모델 초기화
-fgdModel = np.zeros((1, 65), np.float64)  # 전경 모델 초기화
-
-cv.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv.GC_INIT_WITH_RECT)  # 사용자가 지정한 영역(rect)을 기준으로 GrabCut 수행 (배경/객체 분리)
+img1 = cv.imread('img1.jpg')   # img 1 로드
+img2 = cv.imread('img2.jpg')   # img2 로드
+if img1 is None or img2 is None:                                                       # 이미지 로드 실패 시
+    raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                         # 오류
 ```
 
 ## 2) Cv.SIFT_create()를 사용하여 특징점을 검출
 ```python
-rect = cv.selectROI("Select Object", img, False)  # (x, y, width, height) 형태로 자동 생성
+sift = cv.SIFT_create()                                                                # SIFT 객체 생성
+
+kp1, des1 = sift.detectAndCompute(img1_rgb, mask=None)                                 # img1의 특징점 및 디스크립터 계산
+kp2, des2 = sift.detectAndCompute(img2_rgb, mask=None)                                 # img2의 특징점 및 디스크립터 계산
+print(f"img1 특징점 수: {len(kp1)},  img2 특징점 수: {len(kp2)}")                     # 각 이미지 특징점 개수 출력
 ```
 
 ## 3) cv.BFMatcher()와 knnMatch()를 사용하여 특징점을 매칭하고, 좋은 매칭점만 선별
 ```python
-mask2 = np.where((mask == cv.GC_BGD) | (mask == cv.GC_PR_BGD), 0, 1).astype('uint8')  # 배경(0), 객체(1)로 마스크 재구성
+bf = cv.BFMatcher()                                                                    # BFMatcher 객체 생성 (기본: L2 거리)
+knn_matches = bf.knnMatch(des1, des2, k=2)                                             # 각 특징점에 대해 최근접 이웃 2개 매칭
 
-result = img * mask2[:, :, np.newaxis]  # 마스크를 이용해 객체 부분만 남기고 배경 제거
+good_matches = []                                                                      # 좋은 매칭 결과를 저장할 리스트
+for m, n in knn_matches:                                                               # 매칭 쌍 순회
+    if m.distance < 0.7 * n.distance:                                                  # Lowe's ratio test: 거리 비율이 0.7 미만이면
+        good_matches.append(m)                                                         # 좋은 매칭으로 채택
+print(f"좋은 매칭 수: {len(good_matches)}")                                            # 좋은 매칭 개수 출력
 ```
 
 ## 4) cv.findHomography()를 사용하여 호모그래피 행렬을 계산
 
 ```python
-plt.subplot(1,3,1)  # 1번째 이미지
-plt.imshow(cv.cvtColor(img_copy, cv.COLOR_BGR2RGB))  # 원본 이미지 출력 (BGR → RGB 변환)
-plt.title('Original Image')  # 제목 설정
-plt.axis('off')  # 축 제거
-
-plt.subplot(1,3,2)  # 2번째 이미지
-plt.imshow(mask2, cmap='gray')  # 마스크 이미지 출력 (흑백)
-plt.title('Mask')  # 제목 설정
-plt.axis('off')  # 축 제거
-
-plt.subplot(1,3,3)  # 3번 이미지
-plt.imshow(cv.cvtColor(result, cv.COLOR_BGR2RGB))  # 배경 제거된 결과 이미지 출력
-plt.title('Result (Object Only)')  # 제목 설정
-plt.axis('off')  # 축 제거
-
-plt.show()  # 모든 결과 화면에 출력
+H, mask = cv.findHomography(pts2, pts1, cv.RANSAC, 5.0)                               # RANSAC으로 호모그래피 행렬 계산 (이상점 제거)
+print(f"호모그래피 행렬:\n{H}")                                                        # 계산된 호모그래피 행렬 출력
 ```
 
 ## 5) cv.warpPerspective()를 사용하여 한 이미지를 변환하여 다른 이미지와 정렬
 ```python
+h1, w1 = img1_rgb.shape[:2]                                                            # img1 높이·너비 추출
+h2, w2 = img2_rgb.shape[:2]                                                            # img2 높이·너비 추출
+panorama_w = w1 + w2                                                                   # 파노라마 너비: 두 이미지 너비 합산
+panorama_h = max(h1, h2)                                                               # 파노라마 높이: 두 이미지 중 큰 높이 사용
 
+warped = cv.warpPerspective(img2_rgb, H, (panorama_w, panorama_h))                    # img2를 호모그래피로 변환하여 img1 시점에 정렬
+warped[0:h1, 0:w1] = img1_rgb                                                          # 변환된 이미지 위에 img1을 덮어씌워 합성
 ```
 
 ## 6) 변환된 이미지(Warperd Image)와 특징점 매칭 결과(Macthing Result)를 나란히 출력
 ```python
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))                                        # 1행 2열 서브플롯 생성
+fig.suptitle('SIFT Homography', fontsize=16, fontweight='bold')                        # 전체 제목 설정
 
+axes[0].imshow(match_draw)                                                             # 1번 칸에 매칭 결과 출력
+axes[0].set_title(f'Matching Result ({len(good_matches)} matches)', fontsize=13)       # 1번째 칸 제목 설정
+axes[0].axis('off')                                                                    # 1번째 칸 축 숨기기
+
+axes[1].imshow(warped)                                                                 # 2번 칸에 변환·합성된 이미지 출력
+axes[1].set_title('Warped Image (Panorama)', fontsize=13)                              # 2번째 칸 제목 설정
+axes[1].axis('off')                                                                    # 2번째 칸 축 숨기기
+
+plt.tight_layout()                                                                     # 서브플롯 간격 자동 조정
+plt.savefig('sift_homography_result.png', dpi=150, bbox_inches='tight')                # 결과 이미지 파일로 저장
+plt.show()                                                                             # 화면에 이미지 출력
+print("결과 이미지 저장 완료: sift_homography_result.png")                             # 저장 완료 메시지 출력
 ```
 ## 출력 결과
-- 실행시 화면
+- 실행 결과
+![실행 결과](sift_homography_result.png)
+
+- 호모그래피 행렬
+![실행 결과](matrix_result.png)
