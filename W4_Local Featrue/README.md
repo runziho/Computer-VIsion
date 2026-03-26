@@ -114,7 +114,7 @@ import cv2 as cv
 import matplotlib.pyplot as plt                                              
 
 img1 = cv.imread('mot_color70.jpg')                                           # 1번째,
-img2 = cv.imread('mot_color80.jpg')                                           # 2번째 이미지 파일 로드
+img2 = cv.imread('mot_color83.jpg')                                           # 2번째 이미지 파일 로드
 if img1 is None or img2 is None:                                              # 이미지 로드 실패 시
     raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                # 오류
 
@@ -149,6 +149,7 @@ plt.savefig('sift_matching_result.png', dpi=150, bbox_inches='tight')         # 
 plt.show()                                                                    # 화면에 이미지 출력
 print("결과 이미지 저장 완료: sift_matching_result.png")                      # 저장 완료 메시지 출력
 ```
+
 ## 1) cv.imread()를 사용하여 두 개의 이미지를 불러옴
 ```python
 img1 = cv.imread('mot_color70.jpg')                                           # 1번째,
@@ -197,10 +198,9 @@ print("결과 이미지 저장 완료: sift_matching_result.png")
 ## 실행 결과
 
 
-# 3. GrabCut을 이용한 대화식 영역 분할 및 객체 추출
-- coffee cup 이미지로 사용자가 지정한 사각형 영역을 바탕으로 GrabCut 알고리즘을 사용하여 객체 추출
-- 객체 추출 결과를 마스크 형태로 시각화
-- 원본 이미지에서 배경을 제거하고 객체만 남은 이미지 출력
+# 3. 호모그래피를 이용한 이미지 정합 (Image Alignment)
+- SIFT 특징점을 사용하여 두 이미지 간 대응점을 찾고, 이를 바탕으로 호모그래피를 계산하여 하나의 이미지 위에 정렬
+- 샘플파일로 img1.jpg, imag2.jpg, imag3.jpg 중 2개를 선택
 
 ## 전체 코드
 ```python
@@ -243,7 +243,7 @@ plt.axis('off')  # 축 제거
 
 plt.show()  # 모든 결과 화면에 출력
 ```
-## 1) cv.grabCut을 이용하여 대화식 분할을 수행
+## 1) cv.imread()를 사용하여 두 개의 이미지를 불러옴
 ```python
 mask = np.zeros(img.shape[:2], np.uint8)  # 이미지 크기와 동일한 마스크 생성 (초기값 0)
 bgdModel = np.zeros((1, 65), np.float64)  # 배경 모델 초기화
@@ -252,19 +252,20 @@ fgdModel = np.zeros((1, 65), np.float64)  # 전경 모델 초기화
 cv.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv.GC_INIT_WITH_RECT)  # 사용자가 지정한 영역(rect)을 기준으로 GrabCut 수행 (배경/객체 분리)
 ```
 
-## 2) 초기 사각형 영역은 (x,y,width,height) 형식으로 설정
+## 2) Cv.SIFT_create()를 사용하여 특징점을 검출
 ```python
 rect = cv.selectROI("Select Object", img, False)  # (x, y, width, height) 형태로 자동 생성
 ```
 
-## 3) 마스크를 사용하여 원본 이미지에서 배경을 제거
+## 3) cv.BFMatcher()와 knnMatch()를 사용하여 특징점을 매칭하고, 좋은 매칭점만 선별
 ```python
 mask2 = np.where((mask == cv.GC_BGD) | (mask == cv.GC_PR_BGD), 0, 1).astype('uint8')  # 배경(0), 객체(1)로 마스크 재구성
 
 result = img * mask2[:, :, np.newaxis]  # 마스크를 이용해 객체 부분만 남기고 배경 제거
 ```
 
-## 4) matplotlib를 사용하여 원본, 마스크, 배경 제거 이미지 세 개를 나란히 시각화
+## 4) cv.findHomography()를 사용하여 호모그래피 행렬을 계산
+
 ```python
 plt.subplot(1,3,1)  # 1번째 이미지
 plt.imshow(cv.cvtColor(img_copy, cv.COLOR_BGR2RGB))  # 원본 이미지 출력 (BGR → RGB 변환)
@@ -284,5 +285,14 @@ plt.axis('off')  # 축 제거
 plt.show()  # 모든 결과 화면에 출력
 ```
 
+## 5) cv.warpPerspective()를 사용하여 한 이미지를 변환하여 다른 이미지와 정렬
+```python
+
+```
+
+## 6) 변환된 이미지(Warperd Image)와 특징점 매칭 결과(Macthing Result)를 나란히 출력
+```python
+
+```
 ## 출력 결과
 - 실행시 화면
