@@ -112,233 +112,157 @@ print("테스트 정확도:", test_acc)
 
 ### 전체 코드
 ```python
-import cv2 as cv                                                              
-import matplotlib.pyplot as plt                                              
+import tensorflow as tf
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
+from tensorflow.keras.utils import load_img, img_to_array
+import numpy as np
 
-img1 = cv.imread('mot_color70.jpg')                                           # 1번째,
-img2 = cv.imread('mot_color83.jpg')                                           # 2번째 이미지 파일 로드
-if img1 is None or img2 is None:                                              # 이미지 로드 실패 시
-    raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                # 오류
+# CIFAR-10 데이터셋 로드
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
 
-img1_rgb = cv.cvtColor(img1, cv.COLOR_BGR2RGB)                                # 이미지 BGR → RGB 변환
-img2_rgb = cv.cvtColor(img2, cv.COLOR_BGR2RGB)                                # 이미지 BGR → RGB 변환
+# 데이터 전처리
+# 입력 이미지의 픽셀값을 0~1 범위로 정규화
+x_train = x_train / 255.0
+x_test = x_test / 255.0
 
-sift = cv.SIFT_create(nfeatures=300)                                          # SIFT 객체 생성 (최대 특징점 300개)
+# CIFAR-10 클래스 이름 정의
+class_names = [
+    'airplane', 'automobile', 'bird', 'cat', 'deer',
+    'dog', 'frog', 'horse', 'ship', 'truck'
+]
 
-kp1, des1 = sift.detectAndCompute(img1_rgb, mask=None)                        # 첫 번째 이미지 특징점 및 디스크립터 계산
-kp2, des2 = sift.detectAndCompute(img2_rgb, mask=None)                        # 두 번째 이미지 특징점 및 디스크립터 계산
-print(f"img1 특징점 수: {len(kp1)},  img2 특징점 수: {len(kp2)}")            # 각 이미지 특징점 개수 출력
+# CNN 모델 구성
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3)),
+    MaxPooling2D((2, 2)),
 
-bf = cv.BFMatcher(cv.NORM_L2, crossCheck=True)                                # BFMatcher 생성 (L2 거리, 교차 검사 활성화)
-matches = bf.match(des1, des2)                                                # 두 디스크립터 간 1:1 매칭 수행
-matches = sorted(matches, key=lambda x: x.distance)                          # 거리 기준 오름차순 정렬 (좋은 매칭 우선)
-print(f"매칭 수: {len(matches)}")                                             # 매칭 개수 출력
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
 
-img_matches = cv.drawMatches(                                                 # 매칭 결과 이미지 생성
-    img1_rgb, kp1,                                                            # 첫 번째 이미지와 특징점
-    img2_rgb, kp2,                                                            # 두 번째 이미지와 특징점
-    matches[:50],                                                             # 상위 50개 매칭만 표시
-    outImg=None,                                                              # 출력 이미지 (None이면 새로 생성)
-    flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS                          # 매칭되지 않은 특징점은 표시 안 함
+    Conv2D(64, (3, 3), activation='relu'),
+
+    Flatten(),
+    Dense(64, activation='relu'),
+    Dense(10, activation='softmax')
+])
+
+# 모델 컴파일
+# 다중 클래스 분류 문제이므로 sparse_categorical_crossentropy 사용
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
 )
 
-plt.figure(figsize=(14, 6))                                                   # 그림 크기 설정
-plt.imshow(img_matches)                                                       # 매칭 결과 이미지 출력
-plt.title(f'BFMatcher Result (Top 50 / {len(matches)})', fontsize=13)        # 제목 설정
-plt.axis('off')                                                               # 축 숨기기
-plt.tight_layout()                                                            # 여백 자동 조정
-plt.savefig('sift_matching_result.png', dpi=150, bbox_inches='tight')         # 결과 이미지 파일로 저장
-plt.show()                                                                    # 화면에 이미지 출력
-print("결과 이미지 저장 완료: sift_matching_result.png")                      # 저장 완료 메시지 출력
-```
-
-## 1) cv.imread()를 사용하여 두 개의 이미지를 불러옴
-```python
-img1 = cv.imread('mot_color70.jpg')                                           # 1번째,
-img2 = cv.imread('mot_color80.jpg')                                           # 2번째 이미지 파일 로드
-if img1 is None or img2 is None:                                              # 이미지 로드 실패 시
-    raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                # 오류
-```
-## 2) cv.SIFT_create()를 사용하여 특징점을 추출
-```python
-sift = cv.SIFT_create(nfeatures=300)                                          # SIFT 객체 생성 (최대 특징점 300개)
-
-kp1, des1 = sift.detectAndCompute(img1_rgb, mask=None)                        # 첫 번째 이미지 특징점 및 디스크립터 계산
-kp2, des2 = sift.detectAndCompute(img2_rgb, mask=None)                        # 두 번째 이미지 특징점 및 디스크립터 계산
-print(f"img1 특징점 수: {len(kp1)},  img2 특징점 수: {len(kp2)}") 
-```
-## 3) cv.BFMatcher() 또는 cv.FlannBasedMatcher()를 사용하여 두 영상 간 특징점을 매칭
-```python
-bf = cv.BFMatcher(cv.NORM_L2, crossCheck=True)                                # BFMatcher 생성 (L2 거리, 교차 검사 활성화)
-matches = bf.match(des1, des2)                                                # 두 디스크립터 간 1:1 매칭 수행
-matches = sorted(matches, key=lambda x: x.distance)                          # 거리 기준 오름차순 정렬 (좋은 매칭 우선)
-print(f"매칭 수: {len(matches)}")          
-```
-## 4) cv.drawMatches()를 사용하여 매칭 결과를 시각화
-```python
-img_matches = cv.drawMatches(                                                 # 매칭 결과 이미지 생성
-    img1_rgb, kp1,                                                            # 첫 번째 이미지와 특징점
-    img2_rgb, kp2,                                                            # 두 번째 이미지와 특징점
-    matches[:50],                                                             # 상위 50개 매칭만 표시
-    outImg=None,                                                              # 출력 이미지 (None이면 새로 생성)
-    flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS                          # 매칭되지 않은 특징점은 표시 안 함
+# 모델 학습
+model.fit(
+    x_train,
+    y_train,
+    epochs=10,
+    batch_size=64,
+    validation_split=0.1
 )
+
+# 테스트 데이터셋을 이용한 성능 평가
+test_loss, test_acc = model.evaluate(x_test, y_test, verbose=2)
+print("테스트 손실:", test_loss)
+print("테스트 정확도:", test_acc)
+
+# 외부 이미지(dog.jpg) 예측
+img = load_img("dog.jpg", target_size=(32, 32))
+img_array = img_to_array(img)
+
+# 학습 데이터와 동일한 방식으로 정규화 수행
+img_array = img_array / 255.0
+
+# 모델 입력 형태에 맞게 배치 차원 추가
+img_array = np.expand_dims(img_array, axis=0)
+
+# 예측 수행
+prediction = model.predict(img_array)
+predicted_class = np.argmax(prediction, axis=1)[0]
+
+print("예측 결과:", class_names[predicted_class])
+print("각 클래스별 확률:", prediction)
 ```
 
-## 5) matplotlib을 이용하여 매칭 결과를 출력
+## 1) CIFAR-10 데이터셋을 로드
 ```python
-plt.figure(figsize=(14, 6))                                                   # 그림 크기 설정
-plt.imshow(img_matches)                                                       # 매칭 결과 이미지 출력
-plt.title(f'BFMatcher Result (Top 50 / {len(matches)})', fontsize=13)        # 제목 설정
-plt.axis('off')                                                               # 축 숨기기
-plt.tight_layout()                                                            # 여백 자동 조정
-plt.savefig('sift_matching_result.png', dpi=150, bbox_inches='tight')         # 결과 이미지 파일로 저장
-plt.show()                                                                    # 화면에 이미지 출력
-print("결과 이미지 저장 완료: sift_matching_result.png")        
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+```
+## 2) 데이터 전처리(정규화 등)를 수행
+```python
+# 입력 이미지의 픽셀값을 0~1 범위로 정규화
+x_train = x_train / 255.0
+x_test = x_test / 255.0
+
+# CIFAR-10 클래스 이름 정의
+class_names = [
+    'airplane', 'automobile', 'bird', 'cat', 'deer',
+    'dog', 'frog', 'horse', 'ship', 'truck'
+]
+```
+## 3) CNN 모델을 설계하고 훈련
+```python
+#모델 설계 -> Cov2D, MaxPooling2D, Flatten, Dense 레이어를 활용하여 CNN 구성
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3)),
+    MaxPooling2D((2, 2)),
+
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D((2, 2)),
+
+    Conv2D(64, (3, 3), activation='relu'),
+
+    Flatten(),
+    Dense(64, activation='relu'),
+    Dense(10, activation='softmax')
+])
+# 모델 컴파일
+# 다중 클래스 분류 문제이므로 sparse_categorical_crossentropy 사용
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# 모델 학습
+model.fit(
+    x_train,
+    y_train,
+    epochs=10,
+    batch_size=64,
+    validation_split=0.1
+)
+
+```
+## 4) 모델의 성능을 평가하고, 테스트 이미지(dog.jpg)에 대한 예측을 수행
+```python
+# 테스트 데이터셋을 이용한 성능 평가
+test_loss, test_acc = model.evaluate(x_test, y_test, verbose=2)
+print("테스트 손실:", test_loss)
+print("테스트 정확도:", test_acc)
+
+# 외부 이미지(dog.jpg) 예측
+img = load_img("dog.jpg", target_size=(32, 32))
+img_array = img_to_array(img)
+
+# 학습 데이터와 동일한 방식으로 정규화 수행
+img_array = img_array / 255.0
+
+# 모델 입력 형태에 맞게 배치 차원 추가
+img_array = np.expand_dims(img_array, axis=0)
+
+# 예측 수행
+prediction = model.predict(img_array)
+predicted_class = np.argmax(prediction, axis=1)[0]
+
+print("예측 결과:", class_names[predicted_class])
+print("각 클래스별 확률:", prediction)
 ```
 
 ## 실행 결과
-![매칭 결과](sift_matching_result.png)
+![실행 결과](result_2.png)
 
-# 3. 호모그래피를 이용한 이미지 정합 (Image Alignment)
-- SIFT 특징점을 사용하여 두 이미지 간 대응점을 찾고, 이를 바탕으로 호모그래피를 계산하여 하나의 이미지 위에 정렬
-- 샘플파일로 img1.jpg, imag2.jpg, imag3.jpg 중 2개를 선택
-
-## 전체 코드
-```python
-import cv2 as cv                                                                      
-import matplotlib.pyplot as plt                                                    
-import numpy as np                                                                   
-
-img1 = cv.imread('img1.jpg')   # img 1 로드
-img2 = cv.imread('img2.jpg')   # img2 로드
-if img1 is None or img2 is None:                                                       # 이미지 로드 실패 시
-    raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                         # 오류
-img1_rgb = cv.cvtColor(img1, cv.COLOR_BGR2RGB)                                         # img 1 BGR → RGB 변환
-img2_rgb = cv.cvtColor(img2, cv.COLOR_BGR2RGB)                                         # img 2 BGR → RGB 변환
-
-sift = cv.SIFT_create()                                                                # SIFT 객체 생성
-
-kp1, des1 = sift.detectAndCompute(img1_rgb, mask=None)                                 # img1의 특징점 및 디스크립터 계산
-kp2, des2 = sift.detectAndCompute(img2_rgb, mask=None)                                 # img2의 특징점 및 디스크립터 계산
-print(f"img1 특징점 수: {len(kp1)},  img2 특징점 수: {len(kp2)}")                     # 각 이미지 특징점 개수 출력
-
-bf = cv.BFMatcher()                                                                    # BFMatcher 객체 생성 (기본: L2 거리)
-knn_matches = bf.knnMatch(des1, des2, k=2)                                             # 각 특징점에 대해 최근접 이웃 2개 매칭
-
-good_matches = []                                                                      # 좋은 매칭 결과를 저장할 리스트
-for m, n in knn_matches:                                                               # 매칭 쌍 순회
-    if m.distance < 0.7 * n.distance:                                                  # Lowe's ratio test: 거리 비율이 0.7 미만이면
-        good_matches.append(m)                                                         # 좋은 매칭으로 채택
-print(f"좋은 매칭 수: {len(good_matches)}")                                            # 좋은 매칭 개수 출력
-
-pts1 = np.float32([kp1[m.queryIdx].pt for m in good_matches])                         # img1의 매칭 특징점 좌표 추출
-pts2 = np.float32([kp2[m.trainIdx].pt for m in good_matches])                         # img2의 매칭 특징점 좌표 추출
-
-H, mask = cv.findHomography(pts2, pts1, cv.RANSAC, 5.0)                               # RANSAC으로 호모그래피 행렬 계산 (이상점 제거)
-print(f"호모그래피 행렬:\n{H}")                                                        # 계산된 호모그래피 행렬 출력
-
-h1, w1 = img1_rgb.shape[:2]                                                            # img1 높이·너비 추출
-h2, w2 = img2_rgb.shape[:2]                                                            # img2 높이·너비 추출
-panorama_w = w1 + w2                                                                   # 파노라마 너비: 두 이미지 너비 합산
-panorama_h = max(h1, h2)                                                               # 파노라마 높이: 두 이미지 중 큰 높이 사용
-
-warped = cv.warpPerspective(img2_rgb, H, (panorama_w, panorama_h))                    # img2를 호모그래피로 변환하여 img1 시점에 정렬
-warped[0:h1, 0:w1] = img1_rgb                                                          # 변환된 이미지 위에 img1을 덮어씌워 합성
-
-match_draw = cv.drawMatches(                                                           # 매칭 결과 이미지 생성
-    img1_rgb, kp1,                                                                     # img2와 특징점
-    img2_rgb, kp2,                                                                     # img2와 특징점
-    good_matches[:50],                                                                 # 상위 50개 좋은 매칭만 표시
-    outImg=None,                                                                       # 출력 이미지 (None이면 새로 생성)
-    flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS                                   # 매칭되지 않은 특징점은 표시 안 함
-)
-
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))                                        # 1행 2열 서브플롯 생성
-fig.suptitle('SIFT Homography', fontsize=16, fontweight='bold')                        # 전체 제목 설정
-
-axes[0].imshow(match_draw)                                                             # 1번 칸에 매칭 결과 출력
-axes[0].set_title(f'Matching Result ({len(good_matches)} matches)', fontsize=13)       # 1번째 칸 제목 설정
-axes[0].axis('off')                                                                    # 1번째 칸 축 숨기기
-
-axes[1].imshow(warped)                                                                 # 2번 칸에 변환·합성된 이미지 출력
-axes[1].set_title('Warped Image (Panorama)', fontsize=13)                              # 2번째 칸 제목 설정
-axes[1].axis('off')                                                                    # 2번째 칸 축 숨기기
-
-plt.tight_layout()                                                                     # 서브플롯 간격 자동 조정
-plt.savefig('sift_homography_result.png', dpi=150, bbox_inches='tight')                # 결과 이미지 파일로 저장
-plt.show()                                                                             # 화면에 이미지 출력
-print("결과 이미지 저장 완료: sift_homography_result.png")                             # 저장 완료 메시지 출력
-```
-
-## 1) cv.imread()를 사용하여 두 개의 이미지를 불러옴
-```python
-img1 = cv.imread('img1.jpg')   # img 1 로드
-img2 = cv.imread('img2.jpg')   # img2 로드
-if img1 is None or img2 is None:                                                       # 이미지 로드 실패 시
-    raise FileNotFoundError("이미지 파일을 찾을 수 없습니다.")                         # 오류
-```
-
-## 2) Cv.SIFT_create()를 사용하여 특징점을 검출
-```python
-sift = cv.SIFT_create()                                                                # SIFT 객체 생성
-
-kp1, des1 = sift.detectAndCompute(img1_rgb, mask=None)                                 # img1의 특징점 및 디스크립터 계산
-kp2, des2 = sift.detectAndCompute(img2_rgb, mask=None)                                 # img2의 특징점 및 디스크립터 계산
-print(f"img1 특징점 수: {len(kp1)},  img2 특징점 수: {len(kp2)}")                     # 각 이미지 특징점 개수 출력
-```
-
-## 3) cv.BFMatcher()와 knnMatch()를 사용하여 특징점을 매칭하고, 좋은 매칭점만 선별
-```python
-bf = cv.BFMatcher()                                                                    # BFMatcher 객체 생성 (기본: L2 거리)
-knn_matches = bf.knnMatch(des1, des2, k=2)                                             # 각 특징점에 대해 최근접 이웃 2개 매칭
-
-good_matches = []                                                                      # 좋은 매칭 결과를 저장할 리스트
-for m, n in knn_matches:                                                               # 매칭 쌍 순회
-    if m.distance < 0.7 * n.distance:                                                  # Lowe's ratio test: 거리 비율이 0.7 미만이면
-        good_matches.append(m)                                                         # 좋은 매칭으로 채택
-print(f"좋은 매칭 수: {len(good_matches)}")                                            # 좋은 매칭 개수 출력
-```
-
-## 4) cv.findHomography()를 사용하여 호모그래피 행렬을 계산
-
-```python
-H, mask = cv.findHomography(pts2, pts1, cv.RANSAC, 5.0)                               # RANSAC으로 호모그래피 행렬 계산 (이상점 제거)
-print(f"호모그래피 행렬:\n{H}")                                                        # 계산된 호모그래피 행렬 출력
-```
-
-## 5) cv.warpPerspective()를 사용하여 한 이미지를 변환하여 다른 이미지와 정렬
-```python
-h1, w1 = img1_rgb.shape[:2]                                                            # img1 높이·너비 추출
-h2, w2 = img2_rgb.shape[:2]                                                            # img2 높이·너비 추출
-panorama_w = w1 + w2                                                                   # 파노라마 너비: 두 이미지 너비 합산
-panorama_h = max(h1, h2)                                                               # 파노라마 높이: 두 이미지 중 큰 높이 사용
-
-warped = cv.warpPerspective(img2_rgb, H, (panorama_w, panorama_h))                    # img2를 호모그래피로 변환하여 img1 시점에 정렬
-warped[0:h1, 0:w1] = img1_rgb                                                          # 변환된 이미지 위에 img1을 덮어씌워 합성
-```
-
-## 6) 변환된 이미지(Warperd Image)와 특징점 매칭 결과(Macthing Result)를 나란히 출력
-```python
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))                                        # 1행 2열 서브플롯 생성
-fig.suptitle('SIFT Homography', fontsize=16, fontweight='bold')                        # 전체 제목 설정
-
-axes[0].imshow(match_draw)                                                             # 1번 칸에 매칭 결과 출력
-axes[0].set_title(f'Matching Result ({len(good_matches)} matches)', fontsize=13)       # 1번째 칸 제목 설정
-axes[0].axis('off')                                                                    # 1번째 칸 축 숨기기
-
-axes[1].imshow(warped)                                                                 # 2번 칸에 변환·합성된 이미지 출력
-axes[1].set_title('Warped Image (Panorama)', fontsize=13)                              # 2번째 칸 제목 설정
-axes[1].axis('off')                                                                    # 2번째 칸 축 숨기기
-
-plt.tight_layout()                                                                     # 서브플롯 간격 자동 조정
-plt.savefig('sift_homography_result.png', dpi=150, bbox_inches='tight')                # 결과 이미지 파일로 저장
-plt.show()                                                                             # 화면에 이미지 출력
-print("결과 이미지 저장 완료: sift_homography_result.png")                             # 저장 완료 메시지 출력
-```
-## 출력 결과
-- 실행 결과
-![실행 결과](sift_homography_result.png)
-
-- 호모그래피 행렬
-![실행 결과](matrix_result.png)
