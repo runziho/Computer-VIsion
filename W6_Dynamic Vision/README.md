@@ -130,11 +130,35 @@ def main():
 ```
 ## 4) 결과 시각화: 추적된 각 객체에 고유 ID를 부여하고, 해당 ID와 경계 상자를 비디오 프레임에 표시하여 실시간으로 출력합니다.
 ```python
+# 7) 결과 화면에 출력
+for trk in tracks:
+    x1, y1, x2, y2 = trk.bbox
 
+    # 화면 밖으로 나가는 좌표 조금 보정
+    x1 = max(0, x1)
+    y1 = max(0, y1)
+    x2 = max(0, x2)
+    y2 = max(0, y2)
+
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    cv2.putText(
+        frame,
+        "ID {}".format(trk.id),
+        (x1, y1 - 10),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (0, 255, 0),
+        2
+    )
+
+# 결과 영상 보여주기
+cv2.imshow("YOLOv3 + SORT Tracking", frame)
 ```
 
 ## 실행 결과
-
+![실행 결과](result_1(1).png)
+![실행 결과](result_1(2).png)
 
 
 # 1. Mediapipe를 활용한 얼굴 랜드마크 추출 및 시각화
@@ -260,6 +284,6 @@ while True:
 
 ```
 ## 실행 결과
-[!실행 결과][result_2]
+![실행 결과](result_2.png)
 ![실행 결과](result_2.png)
 
