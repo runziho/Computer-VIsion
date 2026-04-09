@@ -1,159 +1,12 @@
-## 전체 코드
+# 1. SORT 알고리즘을 활용한 다중 객체 추적기 구현
+
+- 이 실습에서는 SORT 알고리즘을 사용하여 비디오에서 다중 객체를 실시간으로 추적하는 프로그램을 구현합니다. 이를 통해 객체 추적의 기본 개념과 SORT 알고리즘의 적용 방법을 학습할 수 있습니다.
+
+## 1) 객체 검출기 구현: YOLOv3와 같은 사전 훈련된 객체 검출 모델을 사용하여 각 프레임에서 객체를 검출합니다.
 ```python
-import cv2
-import numpy as np
-from scipy.optimize import linear_sum_assignment
-
-# -------------------------------
-# 1. 파일 경로 설정
-# -------------------------------
-video_path = "slow_traffic_small.mp4"
-cfg_path = "yolov3.cfg"
-weights_path = "yolov3.weights"
-
-# -------------------------------
-# 2. YOLO 관련 설정값
-# -------------------------------
-conf_threshold = 0.5   # 객체라고 볼 최소 confidence
-nms_threshold = 0.4    # NMS에 사용할 threshold
-iou_threshold = 0.3    # tracker와 detection 매칭할 때 사용할 IoU 기준
-max_missed = 10        # 몇 프레임 동안 안 잡히면 tracker 삭제할지
-
-# COCO 데이터셋 클래스 이름
-# yolov3 기본 모델이 보통 이 클래스 순서를 사용함
-class_names = [
-    "person","bicycle","car","motorbike","aeroplane","bus","train","truck","boat","traffic light",
-    "fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow",
-    "elephant","bear","zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee",
-    "skis","snowboard","sports ball","kite","baseball bat","baseball glove","skateboard","surfboard",
-    "tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl","banana","apple",
-    "sandwich","orange","broccoli","carrot","hot dog","pizza","donut","cake","chair","sofa",
-    "pottedplant","bed","diningtable","toilet","tvmonitor","laptop","mouse","remote","keyboard",
-    "cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase",
-    "scissors","teddy bear","hair drier","toothbrush"
-]
-
-# 이번 영상은 교통 영상이라 차량 관련 클래스만 추적
-target_classes = ["car", "bus", "truck", "motorbike", "bicycle"]
-
-# -------------------------------
-# 3. IoU 계산 함수
-#    두 박스가 얼마나 겹치는지 계산
-# -------------------------------
-def calc_iou(box1, box2):
-    x1 = max(box1[0], box2[0])
-    y1 = max(box1[1], box2[1])
-    x2 = min(box1[2], box2[2])
-    y2 = min(box1[3], box2[3])
-
-    inter_w = max(0, x2 - x1)
-    inter_h = max(0, y2 - y1)
-    inter_area = inter_w * inter_h
-
-    box1_area = max(0, box1[2] - box1[0]) * max(0, box1[3] - box1[1])
-    box2_area = max(0, box2[2] - box2[0]) * max(0, box2[3] - box2[1])
-
-    union_area = box1_area + box2_area - inter_area
-
-    if union_area == 0:
-        return 0
-
-    return inter_area / union_area
-
-# -------------------------------
-# 4. Track 클래스
-#    SORT에서 tracker 하나를 의미
-#    여기서는 Kalman Filter를 이용해서
-#    다음 위치를 예측함
-# -------------------------------
-class Track:
-    next_id = 0
-
-    def __init__(self, bbox):
-        # tracker마다 고유 ID 부여
-        self.id = Track.next_id
-        Track.next_id += 1
-
-        # 현재 bounding box 저장
-        self.bbox = bbox
-
-        # 몇 프레임 동안 detection과 매칭 안 됐는지 저장
-        self.missed = 0
-
-        # Kalman Filter 생성
-        # 상태값 8개: x1, y1, x2, y2, vx1, vy1, vx2, vy2
-        # 측정값 4개: x1, y1, x2, y2
-        self.kf = cv2.KalmanFilter(8, 4)
-
-        # 상태 전이 행렬
-        # 위치 + 속도 모델
-        self.kf.transitionMatrix = np.array([
-            [1, 0, 0, 0, 1, 0, 0, 0],
-            [0, 1, 0, 0, 0, 1, 0, 0],
-            [0, 0, 1, 0, 0, 0, 1, 0],
-            [0, 0, 0, 1, 0, 0, 0, 1],
-            [0, 0, 0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1]
-        ], dtype=np.float32)
-
-        # 측정 행렬
-        # 실제로는 위치(x1, y1, x2, y2)만 관측 가능
-        self.kf.measurementMatrix = np.array([
-            [1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 0, 0, 0, 0]
-        ], dtype=np.float32)
-
-        # 잡음 관련 행렬
-        self.kf.processNoiseCov = np.eye(8, dtype=np.float32) * 0.03
-        self.kf.measurementNoiseCov = np.eye(4, dtype=np.float32) * 0.5
-        self.kf.errorCovPost = np.eye(8, dtype=np.float32)
-
-        # 초기 상태 설정
-        self.kf.statePost = np.array([
-            [bbox[0]],
-            [bbox[1]],
-            [bbox[2]],
-            [bbox[3]],
-            [0],
-            [0],
-            [0],
-            [0]
-        ], dtype=np.float32)
-
-    # 다음 위치 예측
-    def predict(self):
-        pred = self.kf.predict()
-
-        x1 = int(pred[0][0])
-        y1 = int(pred[1][0])
-        x2 = int(pred[2][0])
-        y2 = int(pred[3][0])
-
-        self.bbox = [x1, y1, x2, y2]
-        return self.bbox
-
-    # detection 결과로 tracker 보정
-    def update(self, bbox):
-        measurement = np.array([
-            [np.float32(bbox[0])],
-            [np.float32(bbox[1])],
-            [np.float32(bbox[2])],
-            [np.float32(bbox[3])]
-        ])
-
-        self.kf.correct(measurement)
-        self.bbox = bbox
-        self.missed = 0
-
-# -------------------------------
 # 5. YOLO로 객체 검출하는 함수
 #    현재 프레임에서 차량 객체를 찾아서
 #    bounding box 리스트를 반환
-# -------------------------------
 def detect_objects(frame, net, output_layers):
     height, width = frame.shape[:2]
 
@@ -221,126 +74,148 @@ def detect_objects(frame, net, output_layers):
 
     return result_boxes
 
-# -------------------------------
-# 6. detection과 tracker를 매칭하는 함수
-#    Hungarian 알고리즘 사용
-# -------------------------------
-def match_detections_and_tracks(detections, tracks):
-    # tracker가 하나도 없으면
-    # detection은 전부 새 tracker가 되어야 함
-    if len(tracks) == 0:
-        return [], list(range(len(detections))), []
+```
+## 2) mathworks.comSORT 추적기 초기화: 검출된 객체의 경계 상자를 입력으로 받아 SORT 추적기를 초기화합니다.
+```python
+new_track = Track(detections[det_idx])
+tracks.append(new_track)
+```
+## 3) 객체 추적: 각 프레임마다 검출된 객체와 기존 추적 객체를 연관시켜 추적을 유지합니다.
+```python
 
-    # IoU 행렬 만들기
-    iou_matrix = np.zeros((len(detections), len(tracks)), dtype=np.float32)
+```
+## 4) 결과 시각화: 추적된 각 객체에 고유 ID를 부여하고, 해당 ID와 경계 상자를 비디오 프레임에 표시하여 실시간으로출력합니다.
+```python
 
-    for d in range(len(detections)):
-        for t in range(len(tracks)):
-            iou_matrix[d, t] = calc_iou(detections[d], tracks[t].bbox)
+```
 
-    # Hungarian 알고리즘은 비용 최소화이므로
-    # IoU를 최대화하기 위해 -iou_matrix 사용
-    row_idx, col_idx = linear_sum_assignment(-iou_matrix)
+## 실행 결과
 
-    matches = []
-    unmatched_detections = list(range(len(detections)))
-    unmatched_tracks = list(range(len(tracks)))
 
-    for r, c in zip(row_idx, col_idx):
-        # IoU가 너무 낮으면 같은 객체로 안 봄
-        if iou_matrix[r, c] >= iou_threshold:
-            matches.append((r, c))
-            unmatched_detections.remove(r)
-            unmatched_tracks.remove(c)
 
-    return matches, unmatched_detections, unmatched_tracks
+# 1. Mediapipe를 활용한 얼굴 랜드마크 추출 및 시각화
 
-# -------------------------------
-# 7. 메인 함수
-# -------------------------------
-def main():
-    # YOLO 모델 불러오기
-    net = cv2.dnn.readNetFromDarknet(cfg_path, weights_path)
-    output_layers = net.getUnconnectedOutLayersNames()
+- Mediapipe의 FaceMesh 모듈을 사용하여 얼굴의 468개 랜드마크를 추출하고, 이를 실시간 영상에 시각화하는프로그램을 구현합니다.
 
-    # 비디오 열기
-    cap = cv2.VideoCapture(video_path)
+## 전체 코드 
+```python
+import cv2
+import mediapipe as mp
 
-    if not cap.isOpened():
-        print("비디오를 열 수 없습니다.")
-        return
+mp_face_mesh = mp.solutions.face_mesh # MediaPipe 안의 face mesh 기능을 사용하기 위한 모듈
+mp_drawing = mp.solutions.drawing_utils # 랜드마크를 화면에 그리기 위함
+mp_drawing_styles = mp.solutions.drawing_styles # MediaPipe에서 제공하는 기본 drawing 스타일 사용을 위함
 
-    tracks = []
+# FaceMesh 객체를 생성함
+face_mesh = mp_face_mesh.FaceMesh(
+    static_image_mode=False,
+    max_num_faces=1,  # 한 번에 최대 1명의 얼굴만 검출하도록 설정
+    refine_landmarks=False,
+    min_detection_confidence=0.5, # 얼굴 검출 최소 신뢰도 설정
+    min_tracking_confidence=0.5  # 얼굴 추적 최소 신뢰도 설정
+)
 
-    while True:
-        ret, frame = cap.read()
+# 기본 웹캠(0번 카메라)을 열기
+cap = cv2.VideoCapture(0)
 
-        if not ret:
-            break
+# 웹캠이 안 열리면 오류 메시지 출력
+if not cap.isOpened():
+    print("웹캠을 열 수 없습니다.")
+    exit()
 
-        # 1) 현재 프레임에서 객체 검출
-        detections = detect_objects(frame, net, output_layers)
+# 무한 반복하면서 웹캠 프레임을 계속 받아옴
+while True:
+    # 웹캠에서 프레임 하나를 읽어옴
+    ret, frame = cap.read()
 
-        # 2) 기존 tracker들 위치 예측
-        for trk in tracks:
-            trk.predict()
-            trk.missed += 1
+    # 프레임을 읽지 못했으면 반복 종료
+    if not ret:
+        break
 
-        # 3) detection과 tracker 매칭
-        matches, unmatched_detections, unmatched_tracks = match_detections_and_tracks(detections, tracks)
+    frame = cv2.flip(frame, 1) # 화면을 좌우 반전
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # 4) 매칭된 tracker는 detection으로 update
-        for det_idx, trk_idx in matches:
-            tracks[trk_idx].update(detections[det_idx])
+    results = face_mesh.process(rgb_frame)  # 변환한 프레임을 FaceMesh에 넣어서 얼굴 랜드마크 검출 수행
 
-        # 5) 매칭 안 된 detection은 새 tracker 생성
-        for det_idx in unmatched_detections:
-            new_track = Track(detections[det_idx])
-            tracks.append(new_track)
-
-        # 6) 너무 오래 못 찾은 tracker는 제거
-        new_tracks = []
-        for trk in tracks:
-            if trk.missed <= max_missed:
-                new_tracks.append(trk)
-        tracks = new_tracks
-
-        # 7) 결과 화면에 출력
-        for trk in tracks:
-            x1, y1, x2, y2 = trk.bbox
-
-            # 화면 밖으로 나가는 좌표 조금 보정
-            x1 = max(0, x1)
-            y1 = max(0, y1)
-            x2 = max(0, x2)
-            y2 = max(0, y2)
-
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            cv2.putText(
-                frame,
-                "ID {}".format(trk.id),
-                (x1, y1 - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2
+    # 얼굴 랜드마크가 검출되었는지 확인
+    if results.multi_face_landmarks:
+        # 검출된 얼굴들에 대해 반복
+        for face_landmarks in results.multi_face_landmarks:
+            # 검출된 랜드마크와 연결선을 화면에 그림
+            mp_drawing.draw_landmarks(
+                image=frame, # 원본 프레임 위에 그림
+                landmark_list=face_landmarks, # 검출된 얼굴 랜드마크 정보
+                connections=mp_face_mesh.FACEMESH_TESSELATION, # 얼굴의 삼각형 형태 연결 구조를 사용
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_tesselation_style()
             )
 
-        # 결과 영상 보여주기
-        cv2.imshow("YOLOv3 + SORT Tracking", frame)
+    cv2.imshow("FaceMesh", frame)     # 결과가 그려진 프레임을 화면에 출력
 
-        # ESC 누르면 종료
-        key = cv2.waitKey(1)
-        if key == 27:
-            break
+    if cv2.waitKey(1) == 27:
+        break # ESC 키 누르면 종료
 
-    cap.release()
-    cv2.destroyAllWindows()
-
-# -------------------------------
-# 8. 실행
-# -------------------------------
-if __name__ == "__main__":
-    main()
+cap.release() # 반복문이 끝나면 웹캠 장치 해제
+cv2.destroyAllWindows() # 모든 OpenCV 창 닫기
 ```
+
+## 1) Mediapipe의 FaceMesh 모듈을 사용하여 얼굴 랜드마크 검출기를 초기화합니다.
+```python
+mp_face_mesh = mp.solutions.face_mesh # MediaPipe 안의 face mesh 기능을 사용하기 위한 모듈
+mp_drawing = mp.solutions.drawing_utils # 랜드마크를 화면에 그리기 위함
+mp_drawing_styles = mp.solutions.drawing_styles # MediaPipe에서 제공하는 기본 drawing 스타일 사용을 위함
+
+# FaceMesh 객체를 생성함
+face_mesh = mp_face_mesh.FaceMesh(
+    static_image_mode=False,
+    max_num_faces=1,  # 한 번에 최대 1명의 얼굴만 검출하도록 설정
+    refine_landmarks=False,
+    min_detection_confidence=0.5, # 얼굴 검출 최소 신뢰도 설정
+    min_tracking_confidence=0.5  # 얼굴 추적 최소 신뢰도 설정
+)
+```
+## 2) OpenCV를 사용하여 웹캠으로부터 실시간 영상을 캡처합니다.
+```python
+# 기본 웹캠(0번 카메라)을 열기
+cap = cv2.VideoCapture(0)
+
+# 웹캠이 안 열리면 오류 메시지 출력
+if not cap.isOpened():
+    print("웹캠을 열 수 없습니다.")
+    exit()
+
+# 무한 반복하면서 웹캠 프레임을 계속 받아옴
+while True:
+    # 웹캠에서 프레임 하나를 읽어옴
+    ret, frame = cap.read()
+
+    # 프레임을 읽지 못했으면 반복 종료
+    if not ret:
+        break
+```
+## 3) 검출된 얼굴 랜드마크를 실시간 영상에 점으로 표시합니다.
+```python
+   # 얼굴 랜드마크가 검출되었는지 확인
+    if results.multi_face_landmarks:
+        # 검출된 얼굴들에 대해 반복
+        for face_landmarks in results.multi_face_landmarks:
+            # 검출된 랜드마크와 연결선을 화면에 그림
+            mp_drawing.draw_landmarks(
+                image=frame, # 원본 프레임 위에 그림
+                landmark_list=face_landmarks, # 검출된 얼굴 랜드마크 정보
+                connections=mp_face_mesh.FACEMESH_TESSELATION, # 얼굴의 삼각형 형태 연결 구조를 사용
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_tesselation_style()
+            )
+    cv2.imshow("FaceMesh", frame)     # 결과가 그려진 프레임을 화면에 출력
+```
+## 4) ESC 키를 누르면 프로그램이 종료되도록 설정합니다
+```python
+    if cv2.waitKey(1) == 27:
+        break # ESC 키 누르면 종료
+
+```
+## 실행 결과
+[!실행 결과][result_2]
+![실행 결과](result_2.png)
+
