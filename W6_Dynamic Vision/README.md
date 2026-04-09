@@ -82,9 +82,53 @@ tracks.append(new_track)
 ```
 ## 3) 객체 추적: 각 프레임마다 검출된 객체와 기존 추적 객체를 연관시켜 추적을 유지합니다.
 ```python
+def main():
+    # YOLO 모델 불러오기
+    net = cv2.dnn.readNetFromDarknet(cfg_path, weights_path)
+    output_layers = net.getUnconnectedOutLayersNames()
 
+    # 비디오 열기
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("비디오를 열 수 없습니다.")
+        return
+
+    tracks = []
+
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            break
+
+        # 1) 현재 프레임에서 객체 검출
+        detections = detect_objects(frame, net, output_layers)
+
+        # 2) 기존 tracker들 위치 예측
+        for trk in tracks:
+            trk.predict()
+            trk.missed += 1
+
+        # 3) detection과 tracker 매칭
+        matches, unmatched_detections, unmatched_tracks = match_detections_and_tracks(detections, tracks)
+
+        # 4) 매칭된 tracker는 detection으로 update
+        for det_idx, trk_idx in matches:
+            tracks[trk_idx].update(detections[det_idx])
+
+        # 5) 매칭 안 된 detection은 새 tracker 생성
+        for det_idx in unmatched_detections:
+            new_track = Track(detections[det_idx])
+            tracks.append(new_track)
+
+        # 6) 너무 오래 못 찾은 tracker는 제거
+        new_tracks = []
+        for trk in tracks:
+            if trk.missed <= max_missed:
+                new_tracks.append(trk)
+        tracks = new_tracks
 ```
-## 4) 결과 시각화: 추적된 각 객체에 고유 ID를 부여하고, 해당 ID와 경계 상자를 비디오 프레임에 표시하여 실시간으로출력합니다.
+## 4) 결과 시각화: 추적된 각 객체에 고유 ID를 부여하고, 해당 ID와 경계 상자를 비디오 프레임에 표시하여 실시간으로 출력합니다.
 ```python
 
 ```
